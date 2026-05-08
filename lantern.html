@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lantern — A Walk in the Pines</title>
+<style>
+  :root {
+    --ink: #050810;
+    --bone: #c8c0a8;
+    --moon: #b8c8e0;
+    --ember: #c89668;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    color: var(--bone);
+    cursor: none;
+    user-select: none;
+  }
+
+  /* Background video stack */
+  #bg-stage {
+    position: fixed; inset: 0;
+    z-index: 1;
+    background: #000;
+    overflow: hidden;
+  }
+  .bg-video {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 100%; height: 100%;
+    min-width: 100%; min-height: 100%;
+    transform: translate(-50%, -50%);
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 5s ease-in-out;
+    pointer-events: none;
+    will-change: opacity;
+  }
+  .bg-video.active { opacity: 1; }
+
+  /* Game canvas (overlays) */
+  #c {
+    position: relative;
+    display: block;
+    width: 100vw; height: 100vh;
+    z-index: 2;
+  }
+
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; pointer-events: none;
+    text-align: center; z-index: 5;
+    transition: opacity 1.6s ease;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none !important; }
+  .overlay.active { pointer-events: auto; }
+
+  .title {
+    font-size: clamp(40px, 7vw, 86px);
+    letter-spacing: 0.4em; text-indent: 0.4em;
+    font-weight: 200;
+    text-shadow: 0 0 30px #000, 0 0 24px rgba(184,200,224,0.55);
+    margin: 0 0 8px 0;
+    color: #d8e0ec;
+  }
+  .subtitle {
+    font-style: italic;
+    font-size: clamp(13px, 1.4vw, 17px);
+    opacity: 0.78;
+    letter-spacing: 0.15em;
+    margin: 0 0 36px 0;
+    max-width: 580px;
+    line-height: 1.8;
+    color: #c0c8d8;
+    text-shadow: 0 0 12px rgba(0,0,0,0.9);
+  }
+  .hint {
+    font-size: 10.5px;
+    letter-spacing: 0.4em;
+    opacity: 0.6;
+    text-transform: uppercase;
+    margin-top: 14px;
+    text-shadow: 0 0 8px #000;
+  }
+
+  /* Title overlay fades out fully when entering the cutscene
+     so the title video alone is the backdrop for the story text. */
+  #title-overlay {
+    transition: opacity 1s ease;
+  }
+
+  /* Story cutscene — plays AFTER Begin click, over the title video */
+  #story-overlay {
+    z-index: 6;
+  }
+  .story-line {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-style: normal;
+    font-weight: 400;
+    font-size: clamp(24px, 2.8vw, 38px);
+    letter-spacing: 0.12em;
+    line-height: 1.7;
+    max-width: min(900px, 86vw);
+    width: max-content;
+    text-align: center;
+    color: #e2e6ee;
+    text-shadow: 0 0 22px #000, 0 0 10px rgba(0,0,0,1);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .story-line.show {
+    animation: storyAppear 3.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  @keyframes storyAppear {
+    0%   { opacity: 0; transform: translate(-50%, calc(-50% + 14px)); filter: blur(3px); }
+    14%  { opacity: 1; transform: translate(-50%, -50%); filter: blur(0); }
+    86%  { opacity: 1; transform: translate(-50%, -50%); filter: blur(0); }
+    100% { opacity: 0; transform: translate(-50%, calc(-50% - 8px)); filter: blur(2px); }
+  }
+  #skip-btn {
+    position: absolute;
+    bottom: 36px; right: 36px;
+    pointer-events: auto;
+    background: transparent;
+    border: 1px solid rgba(184, 200, 224, 0.25);
+    color: rgba(200, 208, 220, 0.6);
+    padding: 8px 18px;
+    font-size: 10px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.3s;
+  }
+  #skip-btn:hover {
+    color: #d8e0ec;
+    border-color: rgba(184, 200, 224, 0.5);
+  }
+  .start-btn {
+    pointer-events: auto;
+    background: rgba(8, 12, 20, 0.45);
+    border: 1px solid rgba(184, 200, 224, 0.4);
+    color: #d0d8e8;
+    padding: 16px 48px;
+    font-size: 12px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.4s ease, border-color 0.4s ease, color 0.4s ease, box-shadow 0.4s ease, letter-spacing 0.4s ease;
+    font-family: inherit;
+    backdrop-filter: blur(4px);
+  }
+  .start-btn:hover {
+    background: rgba(232, 160, 74, 0.12);
+    border-color: var(--ember);
+    color: #f0d4a8;
+    box-shadow: 0 0 30px rgba(232, 160, 74, 0.25);
+    letter-spacing: 0.55em;
+  }
+
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 22px 32px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none; z-index: 3;
+    font-size: 10.5px; letter-spacing: 0.3em; text-transform: uppercase;
+    opacity: 0; transition: opacity 1s ease;
+    color: #b0b8c8;
+    text-shadow: 0 0 6px #000;
+  }
+  #hud.show { opacity: 0.9; }
+  .meter { width: 220px; }
+  .meter-label { font-size: 9.5px; opacity: 0.6; margin-bottom: 7px; }
+  .meter-bar {
+    height: 1.5px;
+    background: rgba(184, 200, 224, 0.18);
+    position: relative; overflow: hidden;
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+  }
+  .meter-fill {
+    position: absolute; inset: 0;
+    transform-origin: left;
+    transition: transform 0.15s linear, background 0.5s ease, box-shadow 0.5s ease;
+  }
+  #oil-fill {
+    background: var(--ember);
+    box-shadow: 0 0 8px rgba(200, 150, 104, 0.7);
+  }
+  #depth { text-align: right; }
+  #depth-num { font-size: 17px; letter-spacing: 0.25em; opacity: 0.9; }
+
+  .end-card {
+    background: rgba(8, 12, 18, 0.92);
+    border: 1px solid rgba(184, 200, 224, 0.22);
+    padding: 50px 70px;
+    backdrop-filter: blur(14px);
+    max-width: 520px;
+  }
+  .end-title { font-size: 28px; letter-spacing: 0.32em; margin: 0 0 20px 0; font-weight: 200; }
+  .end-stats { font-size: 12px; letter-spacing: 0.18em; opacity: 0.85; margin: 22px 0 32px 0; line-height: 2.1; }
+  .stat-num { color: var(--ember); font-weight: 600; }
+
+  #loading {
+    position: fixed; inset: 0;
+    background: #000;
+    display: flex;
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    z-index: 10;
+    transition: opacity 1.2s ease;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .load-text {
+    color: #788090;
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 24px;
+  }
+  .load-bar {
+    width: 240px; height: 1px;
+    background: rgba(184, 200, 224, 0.15);
+    overflow: hidden;
+  }
+  .load-fill {
+    height: 100%;
+    background: var(--moon);
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(184, 200, 224, 0.5);
+  }
+
+  .grain {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 4;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.7 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  .pulse {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 4;
+    box-shadow: inset 0 0 220px 70px rgba(140, 0, 0, 0);
+    transition: box-shadow 0.2s ease;
+  }
+</style>
+</head>
+<body>
+<div id="bg-stage">
+  <video class="bg-video" id="vid-title"   loop muted playsinline preload="auto"><source src="title.mp4"          type="video/mp4"></video>
+  <video class="bg-video" id="vid-stage1"  loop muted playsinline preload="auto"><source src="stage1_start.mp4"   type="video/mp4"></video>
+  <video class="bg-video" id="vid-stage2"  loop muted playsinline preload="auto"><source src="stage2_woods.mp4"   type="video/mp4"></video>
+  <video class="bg-video" id="vid-stage3"  loop muted playsinline preload="auto"><source src="stage3_deep.mp4"    type="video/mp4"></video>
+  <video class="bg-video" id="vid-stage4"  loop muted playsinline preload="auto"><source src="stage4_village.mp4" type="video/mp4"></video>
+</div>
+
+<canvas id="c"></canvas>
+<div class="grain"></div>
+<div class="pulse" id="pulse"></div>
+
+<div id="loading">
+  <div class="load-text">Drawing the moonlight</div>
+  <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+</div>
+
+<div id="hud">
+  <div class="meter">
+    <div class="meter-label">Lantern Oil</div>
+    <div class="meter-bar"><div id="oil-fill" class="meter-fill"></div></div>
+  </div>
+  <div id="depth">
+    <div class="meter-label">To the Village</div>
+    <div id="depth-num">— —</div>
+  </div>
+</div>
+
+<div id="title-overlay" class="overlay active">
+  <h1 class="title">LANTERN</h1>
+  <p class="subtitle">A cold moon over the dead wood. Fog on the path.<br/>Carry your light down to the village. Do not stop. Do not look back.</p>
+  <button class="start-btn" id="start-btn">Begin the descent</button>
+  <p class="hint">Move — Mouse&nbsp;&nbsp;·&nbsp;&nbsp;Flare — Hold Click&nbsp;&nbsp;(burns oil, scares the wisps)</p>
+</div>
+
+<div id="story-overlay" class="overlay hidden">
+  <p class="story-line" id="story-1">Never go into the woods after dark.</p>
+  <p class="story-line" id="story-2">You have lost the path.</p>
+  <p class="story-line" id="story-3">Run.<br/>Do not look back.</p>
+  <button id="skip-btn">Skip</button>
+</div>
+
+<div id="end-overlay" class="overlay hidden">
+  <div class="end-card">
+    <h2 class="end-title" id="end-title">—</h2>
+    <p id="end-flavor" style="font-style:italic;opacity:0.75;line-height:1.8;">—</p>
+    <div class="end-stats" id="end-stats">—</div>
+    <button class="start-btn" id="restart-btn">Walk the path again</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // =====================================================================
+  // Setup
+  // =====================================================================
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
+
+  // =====================================================================
+  // Video loading & background management
+  // =====================================================================
+  const videoIds = ['title', 'stage1', 'stage2', 'stage3', 'stage4'];
+  const videos = {};
+  videoIds.forEach(id => { videos[id] = document.getElementById(`vid-${id}`); });
+
+  // Title video plays at normal speed
+
+  function loadVideos(onProgress) {
+    let loaded = 0;
+    const total = videoIds.length;
+    return Promise.all(videoIds.map(id => new Promise(resolve => {
+      const v = videos[id];
+      const done = () => { loaded++; onProgress(loaded / total); resolve(); };
+      if (v.readyState >= 3) { done(); return; }
+      const onReady = () => { v.removeEventListener('canplaythrough', onReady); done(); };
+      v.addEventListener('canplaythrough', onReady);
+      // Safety timeout
+      setTimeout(() => { if (v.readyState < 3) { v.removeEventListener('canplaythrough', onReady); done(); } }, 12000);
+      v.load();
+    })));
+  }
+
+  // Start ALL videos once playable so transitions are instant
+  function startAllVideos() {
+    videoIds.forEach(id => {
+      const v = videos[id];
+      v.play().catch(() => {});
+    });
+  }
+
+  let currentBgId = null;
+  function setBackground(id) {
+    if (currentBgId === id) return;
+    currentBgId = id;
+    videoIds.forEach(otherId => {
+      const v = videos[otherId];
+      if (otherId === id) {
+        v.classList.add('active');
+        v.play().catch(() => {});
+      } else {
+        v.classList.remove('active');
+      }
+    });
+  }
+
+  // =====================================================================
+  // Input
+  // =====================================================================
+  const input = { x: window.innerWidth / 2, y: window.innerHeight / 2, held: false };
+  window.addEventListener('mousemove', e => { input.x = e.clientX; input.y = e.clientY; });
+  window.addEventListener('mousedown', e => { if (e.button === 0) input.held = true; });
+  window.addEventListener('mouseup',   e => { if (e.button === 0) input.held = false; });
+  window.addEventListener('contextmenu', e => e.preventDefault());
+
+  // =====================================================================
+  // Audio
+  // =====================================================================
+  let audioCtx = null, masterGain = null;
+  let heartGain = null, heartRate = 0.9;
+  let breathGain = null, breathRate = 0.25;
+  let whisperGain = null;
+
+  function startAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      return;
+    }
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Browsers (especially Chrome/Safari) often start the context suspended even
+    // inside a user-gesture handler; explicit resume() is required to make it tick.
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(err => console.warn('Audio resume failed:', err));
+    }
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.0;
+    masterGain.connect(audioCtx.destination);
+
+    const buf = makeNoiseBuffer(4, 'brown');
+    const wind = audioCtx.createBufferSource();
+    wind.buffer = buf; wind.loop = true;
+    const windF = audioCtx.createBiquadFilter();
+    windF.type = 'lowpass'; windF.frequency.value = 280;
+    const windG = audioCtx.createGain(); windG.gain.value = 0.55;
+    wind.connect(windF).connect(windG).connect(masterGain);
+    wind.start();
+    const lfo = audioCtx.createOscillator();
+    const lfoG = audioCtx.createGain();
+    lfo.frequency.value = 0.07; lfoG.gain.value = 0.22;
+    lfo.connect(lfoG).connect(windG.gain); lfo.start();
+
+    const whisperBuf = makeNoiseBuffer(6, 'white');
+    const whisperSrc = audioCtx.createBufferSource();
+    whisperSrc.buffer = whisperBuf; whisperSrc.loop = true;
+    const whisperBP = audioCtx.createBiquadFilter();
+    whisperBP.type = 'bandpass'; whisperBP.frequency.value = 1200; whisperBP.Q.value = 4;
+    const whisperLFO = audioCtx.createOscillator();
+    const whisperLFOG = audioCtx.createGain();
+    whisperLFO.frequency.value = 0.4; whisperLFOG.gain.value = 600;
+    whisperLFO.connect(whisperLFOG).connect(whisperBP.frequency); whisperLFO.start();
+    whisperGain = audioCtx.createGain(); whisperGain.gain.value = 0.0;
+    whisperSrc.connect(whisperBP).connect(whisperGain).connect(masterGain);
+    whisperSrc.start();
+
+    heartGain = audioCtx.createGain(); heartGain.gain.value = 1.0;
+    heartGain.connect(masterGain);
+    breathGain = audioCtx.createGain(); breathGain.gain.value = 1.0;
+    breathGain.connect(masterGain);
+
+    masterGain.gain.linearRampToValueAtTime(0.78, audioCtx.currentTime + 2.0);
+  }
+
+  function makeNoiseBuffer(seconds, type = 'white') {
+    const len = audioCtx.sampleRate * seconds;
+    const b = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const d = b.getChannelData(0);
+    if (type === 'brown') {
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        last = (last + 0.018 * w) / 1.018;
+        d[i] = last * 3.6;
+      }
+    } else {
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return b;
+  }
+
+  function chime(freq = 880) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    o.connect(g).connect(masterGain);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    o.start(t); o.stop(t + 1.6);
+    const o2 = audioCtx.createOscillator(); const g2 = audioCtx.createGain();
+    o2.type = 'sine'; o2.frequency.value = freq * 1.5;
+    o2.connect(g2).connect(masterGain);
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(0.06, t + 0.02);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+    o2.start(t); o2.stop(t + 1.1);
+  }
+
+  function heartbeat() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o1 = audioCtx.createOscillator(); const g1 = audioCtx.createGain();
+    o1.type = 'sine'; o1.frequency.value = 60;
+    o1.connect(g1).connect(heartGain);
+    g1.gain.setValueAtTime(0, t);
+    g1.gain.linearRampToValueAtTime(0.55, t + 0.02);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    o1.frequency.exponentialRampToValueAtTime(35, t + 0.18);
+    o1.start(t); o1.stop(t + 0.2);
+    const o2 = audioCtx.createOscillator(); const g2 = audioCtx.createGain();
+    o2.type = 'sine'; o2.frequency.value = 55;
+    o2.connect(g2).connect(heartGain);
+    g2.gain.setValueAtTime(0, t + 0.16);
+    g2.gain.linearRampToValueAtTime(0.4, t + 0.18);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+    o2.frequency.exponentialRampToValueAtTime(32, t + 0.34);
+    o2.start(t + 0.16); o2.stop(t + 0.36);
+  }
+
+  function breath(out = false) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const dur = out ? 1.4 : 1.0;
+    const noise = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) {
+      const env = Math.sin((i / nd.length) * Math.PI);
+      nd[i] = (Math.random() * 2 - 1) * env;
+    }
+    const src = audioCtx.createBufferSource(); src.buffer = noise;
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = out ? 700 : 900; f.Q.value = 0.8;
+    const g = audioCtx.createGain(); g.gain.value = out ? 0.18 : 0.14;
+    src.connect(f).connect(g).connect(breathGain);
+    src.start(t); src.stop(t + dur);
+  }
+
+  function footstep() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const noise = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.25, audioCtx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) {
+      nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.05));
+    }
+    const src = audioCtx.createBufferSource(); src.buffer = noise;
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 600 + Math.random() * 300; f.Q.value = 1.2;
+    const g = audioCtx.createGain(); g.gain.value = 0.10;
+    src.connect(f).connect(g).connect(masterGain);
+    src.start(t);
+  }
+
+  function branchSnap() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const noise = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) {
+      nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.012));
+    }
+    const src = audioCtx.createBufferSource(); src.buffer = noise;
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = 1200;
+    const g = audioCtx.createGain(); g.gain.value = 0.22;
+    src.connect(f).connect(g).connect(masterGain);
+    src.start(t);
+  }
+
+  function wolfHowl(distant = false) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const baseFreq = distant ? 220 : 280;
+    const peakFreq = distant ? 380 : 470;
+    const osc = audioCtx.createOscillator(); osc.type = 'sawtooth';
+    const gain = audioCtx.createGain();
+    const formant = audioCtx.createBiquadFilter();
+    formant.type = 'bandpass'; formant.Q.value = 6;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = distant ? 850 : 1500;
+    const vib = audioCtx.createOscillator(); const vibG = audioCtx.createGain();
+    vib.frequency.value = 5.5; vibG.gain.value = 8;
+    vib.connect(vibG).connect(osc.frequency);
+    osc.connect(formant).connect(lp).connect(gain).connect(masterGain);
+    const dur = distant ? 3.4 : 2.7;
+    const peak = distant ? 0.07 : 0.16;
+    osc.frequency.setValueAtTime(baseFreq * 0.9, t);
+    osc.frequency.linearRampToValueAtTime(peakFreq, t + 0.6);
+    osc.frequency.linearRampToValueAtTime(peakFreq * 0.95, t + dur * 0.7);
+    osc.frequency.linearRampToValueAtTime(baseFreq * 0.7, t + dur);
+    formant.frequency.setValueAtTime(900, t);
+    formant.frequency.linearRampToValueAtTime(1250, t + 0.5);
+    formant.frequency.linearRampToValueAtTime(900, t + dur * 0.6);
+    formant.frequency.linearRampToValueAtTime(700, t + dur);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(peak, t + 0.4);
+    gain.gain.linearRampToValueAtTime(peak * 0.85, t + dur * 0.7);
+    gain.gain.linearRampToValueAtTime(0, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.05);
+    vib.start(t); vib.stop(t + dur + 0.05);
+    if (!distant) {
+      const echoD = audioCtx.createDelay(); echoD.delayTime.value = 0.5;
+      const echoG = audioCtx.createGain(); echoG.gain.value = 0.4;
+      const echoF = audioCtx.createBiquadFilter();
+      echoF.type = 'lowpass'; echoF.frequency.value = 600;
+      gain.connect(echoD).connect(echoF).connect(echoG).connect(masterGain);
+    }
+    if (!distant && Math.random() < 0.4) {
+      setTimeout(() => wolfHowl(true), 700 + Math.random() * 800);
+    }
+  }
+
+  function growl() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    o.type = 'sawtooth'; o.frequency.value = 85;
+    f.type = 'lowpass'; f.frequency.value = 380;
+    o.connect(f).connect(g).connect(masterGain);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.08, t + 0.2);
+    g.gain.linearRampToValueAtTime(0, t + 1.5);
+    o.frequency.linearRampToValueAtTime(110, t + 0.7);
+    o.frequency.linearRampToValueAtTime(80, t + 1.5);
+    o.start(t); o.stop(t + 1.6);
+  }
+
+  // =====================================================================
+  // World
+  // =====================================================================
+  const TARGET_DISTANCE = 6500;
+
+  // Stage breakpoints for transitions
+  const STAGE_BREAKS = [
+    { progress: 0.00, id: 'stage1' },
+    { progress: 0.28, id: 'stage2' },
+    { progress: 0.55, id: 'stage3' },
+    { progress: 0.80, id: 'stage4' },
+  ];
+
+  const game = {
+    state: 'title',
+    time: 0, distance: 0,
+    speed: 0, targetSpeed: 2.4,
+    oil: 1.0, score: 0, wispsCollected: 0,
+    light: { x: 0, y: 0, r: 220, targetR: 220, flicker: 0 },
+    wisps: [], wolves: [], particles: [],
+    spawnAccum: { wisp: 0, wolf: 0, footstep: 0, breath: 0 },
+    nextHowl: 5 + Math.random() * 6,
+    nextSnap: 4 + Math.random() * 5,
+    bobPhase: 0, shake: 0, fadeIn: 1.0,
+    heartTimer: 0,
+  };
+
+  function reset() {
+    game.state = 'playing';
+    game.time = 0; game.distance = 0; game.speed = 0; game.targetSpeed = 2.4;
+    game.oil = 1.0; game.score = 0; game.wispsCollected = 0;
+    game.wisps.length = 0; game.wolves.length = 0;
+    game.particles.length = 0;
+    game.spawnAccum = { wisp: 0, wolf: 0, footstep: 0, breath: 0 };
+    game.nextHowl = 5 + Math.random() * 6;
+    game.nextSnap = 4 + Math.random() * 5;
+    game.bobPhase = 0; game.shake = 0; game.fadeIn = 1.0;
+    game.heartTimer = 0;
+    game.light.x = input.x; game.light.y = input.y;
+    setBackground('stage1');
+  }
+
+  function spawnWisp() {
+    game.wisps.push({
+      x: rand(W * 0.2, W * 0.8),
+      y: rand(H * 0.45, H * 0.85),
+      vx: rand(-0.6, 0.6), vy: rand(-0.5, -0.1),
+      life: 1.0,
+      pulse: Math.random() * Math.PI * 2,
+      drift: Math.random() * Math.PI * 2,
+      driftSpeed: 0.9 + Math.random() * 0.9,
+      collected: false, hue: rand(38, 60),
+    });
+  }
+
+  function spawnWolf() {
+    const fromLeft = Math.random() < 0.5;
+    game.wolves.push({
+      x: fromLeft ? -50 : W + 50,
+      y: rand(H * 0.6, H * 0.88),
+      vx: 0, vy: 0,
+      life: 1.0, wobble: Math.random() * Math.PI * 2,
+      eyesPhase: Math.random() * Math.PI * 2,
+    });
+    if (Math.random() < 0.6) growl();
+  }
+
+  // =====================================================================
+  // Update
+  // =====================================================================
+  function update(dt) {
+    game.time += dt;
+
+    game.light.x = lerp(game.light.x, input.x, 0.22);
+    game.light.y = lerp(game.light.y, input.y, 0.22);
+    game.light.flicker = Math.sin(game.time * 12) * 4 + Math.sin(game.time * 31) * 2;
+
+    if (game.state !== 'playing') return;
+
+    game.targetSpeed = 2.4 + Math.min(2.0, game.distance / 3500);
+    game.speed = lerp(game.speed, game.targetSpeed, 0.02);
+    game.distance += game.speed * dt * 60;
+
+    const flareR = input.held && game.oil > 0.05 ? 360 : 220;
+    game.light.targetR = flareR;
+    game.light.r = lerp(game.light.r, game.light.targetR, 0.12);
+
+    let drain = 0.013;
+    if (input.held) drain *= 3.0;
+    drain *= dt;
+    game.oil = Math.max(0, game.oil - drain);
+    if (game.oil <= 0) { gameOver(false, "You've got lost in the woods."); return; }
+    if (game.distance >= TARGET_DISTANCE) {
+      gameOver(true, "Below, the village windows are warm. You made it home.");
+      return;
+    }
+
+    game.bobPhase += dt * game.speed * 1.6;
+
+    // Background stage transitions
+    const p = game.distance / TARGET_DISTANCE;
+    let targetStage = STAGE_BREAKS[0].id;
+    for (let i = STAGE_BREAKS.length - 1; i >= 0; i--) {
+      if (p >= STAGE_BREAKS[i].progress) { targetStage = STAGE_BREAKS[i].id; break; }
+    }
+    if (targetStage !== currentBgId) setBackground(targetStage);
+
+    // Wisps
+    game.spawnAccum.wisp += dt;
+    const wispRate = 1.6 + Math.random() * 1.0;
+    while (game.spawnAccum.wisp > wispRate) {
+      game.spawnAccum.wisp -= wispRate;
+      if (game.wisps.length < 5) spawnWisp();
+    }
+    for (let i = game.wisps.length - 1; i >= 0; i--) {
+      const w = game.wisps[i];
+      w.pulse += dt * 4;
+      w.drift += dt * w.driftSpeed;
+
+      // Wandering motion — wisps follow no path, drifting on a sinusoidal random walk
+      w.vx += Math.cos(w.drift) * 0.07;
+      w.vy += Math.sin(w.drift * 1.4) * 0.07;
+
+      const d = Math.sqrt(dist2(w.x, w.y, game.light.x, game.light.y));
+
+      // Flares scare them. Only when held, and only when light gets close.
+      if (input.held && d < game.light.r * 0.95) {
+        const dx = w.x - game.light.x;
+        const dy = w.y - game.light.y;
+        const dlen = Math.sqrt(dx * dx + dy * dy) || 1;
+        const flee = (1 - d / (game.light.r * 0.95)) * 1.6;
+        w.vx += (dx / dlen) * flee;
+        w.vy += (dy / dlen) * flee;
+      }
+
+      w.x += w.vx; w.y += w.vy + game.speed * 0.4;
+      w.vx *= 0.93; w.vy *= 0.93;
+      if (d < 20 && !w.collected) {
+        w.collected = true;
+        game.oil = Math.min(1.0, game.oil + 0.18);
+        game.score += 250; game.wispsCollected++;
+        chime(660 + Math.random() * 440);
+        for (let p = 0; p < 14; p++) {
+          game.particles.push({
+            x: w.x, y: w.y,
+            vx: Math.cos(p / 14 * Math.PI * 2) * 2.5,
+            vy: Math.sin(p / 14 * Math.PI * 2) * 2.5,
+            size: 1.6, alpha: 1, kind: 'spark',
+          });
+        }
+      }
+      if (w.y > H + 30 || w.collected) game.wisps.splice(i, 1);
+    }
+
+    // Wolves
+    game.spawnAccum.wolf += dt;
+    if (game.oil < 0.6) {
+      const rate = lerp(2.5, 0.9, 1 - game.oil);
+      while (game.spawnAccum.wolf > rate) {
+        game.spawnAccum.wolf -= rate;
+        if (game.wolves.length < 4) spawnWolf();
+      }
+    } else { game.spawnAccum.wolf = 0; }
+    for (let i = game.wolves.length - 1; i >= 0; i--) {
+      const s = game.wolves[i];
+      s.wobble += dt * 1.2;
+      s.eyesPhase += dt * 3;
+      const dx = game.light.x - s.x, dy = game.light.y - s.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const inLight = d < game.light.r * 0.8;
+      const speedMult = inLight ? -1.6 : 0.55;
+      s.vx = lerp(s.vx, (dx / d) * speedMult, 0.06);
+      s.vy = lerp(s.vy, (dy / d) * speedMult, 0.06);
+      s.x += s.vx + Math.sin(s.wobble) * 0.4;
+      s.y += s.vy;
+      if (inLight && input.held) s.life -= dt * 1.4;
+      else if (!inLight) s.life -= dt * 0.04;
+      if (d < 32) { gameOver(false, "Yellow eyes find you in the dark."); return; }
+      if (s.life <= 0 || s.x < -200 || s.x > W + 200 || s.y > H + 200) {
+        game.wolves.splice(i, 1);
+      }
+    }
+
+    // Particles (sparks only — feedback when collecting wisp)
+    for (let i = game.particles.length - 1; i >= 0; i--) {
+      const p = game.particles[i];
+      p.x += p.vx; p.y += p.vy;
+      if (p.kind === 'spark') { p.alpha -= 0.025; p.vx *= 0.94; p.vy *= 0.94; }
+      if (p.alpha <= 0) game.particles.splice(i, 1);
+    }
+
+    // Howls
+    game.nextHowl -= dt;
+    if (game.nextHowl <= 0) {
+      const close = Math.random() < 0.4 + game.distance / TARGET_DISTANCE * 0.3;
+      wolfHowl(!close);
+      game.nextHowl = 9 + Math.random() * 12;
+    }
+    game.nextSnap -= dt;
+    if (game.nextSnap <= 0) {
+      branchSnap();
+      game.nextSnap = 6 + Math.random() * 10;
+    }
+
+    // Footsteps
+    game.spawnAccum.footstep += dt * (game.speed / 2.4);
+    if (game.spawnAccum.footstep > 0.42) {
+      game.spawnAccum.footstep -= 0.42;
+      footstep();
+    }
+
+    // Breath
+    breathRate = 0.18 + (1 - game.oil) * 0.6;
+    game.spawnAccum.breath += dt;
+    if (game.spawnAccum.breath > 1 / breathRate) {
+      game.spawnAccum.breath -= 1 / breathRate;
+      breath(game.spawnAccum.breath > 0.5);
+    }
+
+    // Heartbeat
+    let nearestWolf = Infinity;
+    for (const w of game.wolves) {
+      const d = Math.sqrt(dist2(w.x, w.y, game.light.x, game.light.y));
+      if (d < nearestWolf) nearestWolf = d;
+    }
+    const wolfTension = nearestWolf < 250 ? (1 - nearestWolf / 250) : 0;
+    heartRate = 0.95 + (1 - game.oil) * 1.2 + wolfTension * 1.4;
+    game.heartTimer += dt;
+    if (game.heartTimer > 1 / heartRate) {
+      game.heartTimer = 0;
+      heartbeat();
+      const pulseEl = document.getElementById('pulse');
+      const intensity = 0.05 + (1 - game.oil) * 0.25 + wolfTension * 0.4;
+      pulseEl.style.boxShadow = `inset 0 0 220px 80px rgba(140, 0, 0, ${intensity})`;
+      setTimeout(() => {
+        pulseEl.style.boxShadow = `inset 0 0 220px 70px rgba(140, 0, 0, 0)`;
+      }, 180);
+    }
+
+    if (whisperGain) {
+      const target = 0.04 + (1 - game.oil) * 0.18 + wolfTension * 0.15;
+      whisperGain.gain.value = lerp(whisperGain.gain.value, target, 0.02);
+    }
+
+    game.shake = Math.max(0, game.shake - dt * 30);
+    game.fadeIn = Math.max(0, game.fadeIn - dt * 0.4);
+    updateHud();
+  }
+
+  // =====================================================================
+  // Sprites
+  // =====================================================================
+  function drawWolf(s) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    const wob = Math.sin(s.wobble * 1.7) * 3;
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.93 * s.life})`;
+    ctx.beginPath(); ctx.ellipse(0, 0, 30, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(22, -4 + wob * 0.2, 12, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(30, -3 + wob * 0.2, 7, 3);
+    ctx.beginPath(); ctx.moveTo(17, -10); ctx.lineTo(20, -17); ctx.lineTo(22, -10); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(23, -10); ctx.lineTo(26, -16); ctx.lineTo(27, -9); ctx.closePath(); ctx.fill();
+    ctx.fillRect(-15, 9, 3, 8);
+    ctx.fillRect(-5, 11, 3, 6);
+    ctx.fillRect(8, 11, 3, 6);
+    ctx.fillRect(18, 9, 3, 8);
+    ctx.beginPath();
+    ctx.moveTo(-22, -2);
+    ctx.quadraticCurveTo(-34, -8, -36, -13);
+    ctx.quadraticCurveTo(-30, -4, -22, 2);
+    ctx.fill();
+    const eyeAlpha = 0.85 + Math.sin(s.eyesPhase) * 0.15;
+    ctx.fillStyle = `rgba(255, 220, 100, ${eyeAlpha * s.life})`;
+    ctx.beginPath();
+    ctx.arc(30, -5 + wob * 0.2, 1.6, 0, Math.PI * 2);
+    ctx.arc(33, -5 + wob * 0.2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    const eg = ctx.createRadialGradient(31.5, -5, 0, 31.5, -5, 10);
+    eg.addColorStop(0, `rgba(255, 200, 80, ${0.45 * s.life})`);
+    eg.addColorStop(1, 'rgba(255, 200, 80, 0)');
+    ctx.fillStyle = eg;
+    ctx.beginPath(); ctx.arc(31.5, -5, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLantern(oilFactor) {
+    const lx = game.light.x, ly = game.light.y;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(lx, ly + 18, 12, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.translate(lx, ly);
+    ctx.fillStyle = '#0e0c08';
+    ctx.fillRect(-3, -19, 6, 6);
+    ctx.fillStyle = '#0a0805';
+    ctx.fillRect(-7, -12, 14, 3);
+    ctx.fillRect(-6, -10, 12, 14);
+    ctx.fillRect(-7, 4, 14, 2);
+    ctx.fillStyle = `rgba(255, 200, 120, ${0.95 * oilFactor})`;
+    ctx.fillRect(-4.5, -8, 9, 10);
+    ctx.fillStyle = '#0a0805';
+    ctx.fillRect(-6, -3, 12, 0.8);
+    ctx.fillRect(-1, -10, 1, 14);
+    ctx.strokeStyle = '#0a0805';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, -15, 4, Math.PI, 0, false);
+    ctx.stroke();
+    const flameH = 4 + Math.sin(game.time * 18) * 0.7;
+    ctx.fillStyle = `rgba(255, 245, 210, ${oilFactor})`;
+    ctx.beginPath();
+    ctx.ellipse(0, -2, 1.4, flameH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(120, 200, 255, ${0.8 * oilFactor})`;
+    ctx.fillRect(-0.5, 0, 1, 1.5);
+    ctx.restore();
+  }
+
+  // =====================================================================
+  // Render
+  // =====================================================================
+  function render() {
+    // Canvas is transparent — clear it each frame
+    ctx.clearRect(0, 0, W, H);
+
+    const bobY = Math.sin(game.bobPhase) * 1.4;
+    const bobX = Math.cos(game.bobPhase * 0.5) * 0.7;
+    const shakeX = (Math.random() - 0.5) * game.shake + bobX;
+    const shakeY = (Math.random() - 0.5) * game.shake + bobY;
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    if (game.state === 'playing' || game.state === 'won' || game.state === 'lost') {
+      // Wolves
+      for (const w of game.wolves) drawWolf(w);
+
+      // Wisps
+      for (const w of game.wisps) {
+        const r = 6 + Math.sin(w.pulse) * 2;
+        const wg = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r * 7);
+        wg.addColorStop(0, `hsla(${w.hue}, 95%, 80%, 0.95)`);
+        wg.addColorStop(0.3, `hsla(${w.hue}, 90%, 65%, 0.45)`);
+        wg.addColorStop(1, `hsla(${w.hue}, 90%, 50%, 0)`);
+        ctx.fillStyle = wg;
+        ctx.beginPath(); ctx.arc(w.x, w.y, r * 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `hsla(${w.hue}, 100%, 92%, 1)`;
+        ctx.beginPath(); ctx.arc(w.x, w.y, r * 0.7, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Spark particles (wisp collection feedback)
+      for (const p of game.particles) {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = '#ffd58a';
+        ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+        ctx.restore();
+      }
+
+      // ---- LIGHTING (the only overlay over the video) ----
+      // Darken outside lantern radius
+      ctx.save();
+      const dark = ctx.createRadialGradient(
+        game.light.x, game.light.y, game.light.r * 0.4,
+        game.light.x, game.light.y, game.light.r * 2.4
+      );
+      dark.addColorStop(0, 'rgba(0,0,0,0)');
+      dark.addColorStop(0.5, 'rgba(2, 4, 8, 0.22)');
+      dark.addColorStop(1, 'rgba(2, 4, 8, 0.62)');
+      ctx.fillStyle = dark;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+
+      // Warm lantern glow
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const oilFactor = clamp(game.oil * 1.4, 0.2, 1);
+      const flickerR = game.light.r + game.light.flicker;
+      const lg = ctx.createRadialGradient(
+        game.light.x, game.light.y, 0,
+        game.light.x, game.light.y, flickerR
+      );
+      const intensity = input.held ? 0.55 : 0.38;
+      lg.addColorStop(0, `rgba(255, 215, 155, ${intensity * oilFactor})`);
+      lg.addColorStop(0.3, `rgba(225, 155, 75, ${0.18 * oilFactor})`);
+      lg.addColorStop(0.7, `rgba(110, 55, 25, ${0.05 * oilFactor})`);
+      lg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+
+      drawLantern(oilFactor);
+    }
+
+    // Vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.32, W/2, H/2, Math.max(W,H) * 0.78);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    if (game.fadeIn > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${game.fadeIn})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.restore();
+  }
+
+  // =====================================================================
+  // HUD
+  // =====================================================================
+  const hudEl = document.getElementById('hud');
+  const oilFill = document.getElementById('oil-fill');
+  const depthNum = document.getElementById('depth-num');
+
+  function updateHud() {
+    oilFill.style.transform = `scaleX(${game.oil})`;
+    if (game.oil < 0.25) {
+      oilFill.style.background = '#a83030';
+      oilFill.style.boxShadow = '0 0 14px rgba(160, 30, 30, 0.7)';
+    } else if (game.oil < 0.5) {
+      oilFill.style.background = '#b87038';
+      oilFill.style.boxShadow = '0 0 10px rgba(184, 112, 56, 0.6)';
+    } else {
+      oilFill.style.background = '#c89668';
+      oilFill.style.boxShadow = '0 0 8px rgba(200, 150, 104, 0.7)';
+    }
+    const remaining = Math.max(0, TARGET_DISTANCE - game.distance);
+    depthNum.textContent = Math.round(remaining) + ' m';
+  }
+
+  // =====================================================================
+  // Game over
+  // =====================================================================
+  const titleOverlay = document.getElementById('title-overlay');
+  const endOverlay = document.getElementById('end-overlay');
+  const endTitle = document.getElementById('end-title');
+  const endFlavor = document.getElementById('end-flavor');
+  const endStats = document.getElementById('end-stats');
+
+  function gameOver(won, flavor) {
+    game.state = won ? 'won' : 'lost';
+    setTimeout(() => {
+      hudEl.classList.remove('show');
+      endOverlay.classList.remove('hidden');
+      endOverlay.classList.add('active');
+      endTitle.textContent = won ? 'YOU REACHED THE VILLAGE' : "YOU'VE GOT LOST IN THE WOODS";
+      endFlavor.textContent = flavor;
+      const finalScore = Math.round(
+        game.distance * 1.0 + game.wispsCollected * 250
+        + (won ? 2000 : 0) + game.oil * 1500
+      );
+      endStats.innerHTML = `
+        Distance walked &nbsp;<span class="stat-num">${Math.round(game.distance)} m</span><br/>
+        Wisps gathered &nbsp;<span class="stat-num">${game.wispsCollected}</span><br/>
+        Final score &nbsp;<span class="stat-num">${finalScore}</span>
+      `;
+    }, 1000);
+  }
+
+  // =====================================================================
+  // Loop
+  // =====================================================================
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Story cutscene ----
+  // Each line shows for 3.8s. The next line starts 2.9s after the previous one
+  // (so they overlap during their fade-out / fade-in tails).
+  const STORY_LINE_DURATION = 3800;
+  const STORY_LINE_GAP      = 2900;
+  const STORY_START_DELAY   = 1100;   // brief pause so LANTERN can fade out first
+  const STORY_END_HOLD      = 1000;   // short hold before stage-1 transition
+  const storyOverlay = document.getElementById('story-overlay');
+  const storyLines = [
+    document.getElementById('story-1'),
+    document.getElementById('story-2'),
+    document.getElementById('story-3'),
+  ];
+  let storyTimers = [];
+
+  function clearStoryTimers() {
+    storyTimers.forEach(t => clearTimeout(t));
+    storyTimers = [];
+  }
+
+  function playStoryThen(callback) {
+    storyOverlay.classList.remove('hidden');
+    storyOverlay.classList.add('active');
+    storyLines.forEach(l => l.classList.remove('show'));
+
+    storyLines.forEach((line, i) => {
+      void line.offsetWidth; // force reflow so .show retriggers cleanly on replays
+      const t = setTimeout(() => line.classList.add('show'),
+                           STORY_START_DELAY + i * STORY_LINE_GAP);
+      storyTimers.push(t);
+    });
+
+    const total = STORY_START_DELAY
+                + (storyLines.length - 1) * STORY_LINE_GAP
+                + STORY_LINE_DURATION
+                + STORY_END_HOLD;
+    const t = setTimeout(() => {
+      storyOverlay.classList.add('hidden');
+      storyOverlay.classList.remove('active');
+      callback();
+    }, total);
+    storyTimers.push(t);
+  }
+
+  function skipStory() {
+    clearStoryTimers();
+    storyOverlay.classList.add('hidden');
+    storyOverlay.classList.remove('active');
+    actuallyStartGame();
+  }
+
+  function actuallyStartGame() {
+    endOverlay.classList.add('hidden');
+    endOverlay.classList.remove('active');
+    hudEl.classList.add('show');
+    reset();
+    setTimeout(() => wolfHowl(true), 2200);
+  }
+
+  function startGame() {
+    startAudio();
+    // Fade out the entire title overlay (LANTERN included) so only the title
+    // video remains as the backdrop while the story plays over it.
+    titleOverlay.classList.add('hidden');
+    titleOverlay.classList.remove('active');
+    playStoryThen(actuallyStartGame);
+  }
+
+  // Replay-from-end skips the story (you've already seen it).
+  function quickRestart() {
+    titleOverlay.classList.add('hidden');
+    titleOverlay.classList.remove('active');
+    actuallyStartGame();
+  }
+
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('restart-btn').addEventListener('click', quickRestart);
+  document.getElementById('skip-btn').addEventListener('click', skipStory);
+
+  // =====================================================================
+  // Boot
+  // =====================================================================
+  const loadFill = document.getElementById('load-fill');
+  const loadingEl = document.getElementById('loading');
+
+  loadVideos(p => { loadFill.style.width = (p * 100) + '%'; })
+    .then(() => {
+      // Start all videos so cross-fades are instant
+      startAllVideos();
+      // Activate the title video
+      setBackground('title');
+      setTimeout(() => loadingEl.classList.add('hidden'), 450);
+      requestAnimationFrame(frame);
+    })
+    .catch(err => {
+      console.error(err);
+      loadingEl.querySelector('.load-text').textContent = 'Failed to load — check video files';
+    });
+})();
+</script>
+</body>
+</html>
